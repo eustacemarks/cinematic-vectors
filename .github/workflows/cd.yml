@@ -1,0 +1,72 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  deploy-dev:
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push images
+        run: |
+          REGISTRY=${{ steps.ecr.outputs.registry }}
+          for SERVICE in pipeline mcp-server api; do
+            docker build -t $REGISTRY/movie-search/$SERVICE:${{ github.sha }} ./$SERVICE
+            docker push $REGISTRY/movie-search/$SERVICE:${{ github.sha }}
+            docker tag  $REGISTRY/movie-search/$SERVICE:${{ github.sha }} \
+                        $REGISTRY/movie-search/$SERVICE:latest
+            docker push $REGISTRY/movie-search/$SERVICE:latest
+          done
+
+      - name: Terraform apply (dev)
+        run: |
+          cd terraform
+          terraform init
+          terraform apply -auto-approve \
+            -var-file=environments/dev/terraform.tfvars \
+            -var="postgres_password=${{ secrets.POSTGRES_PASSWORD }}" \
+            -var="jwt_secret=${{ secrets.JWT_SECRET }}"
+
+      - name: Smoke test
+        run: |
+          ALB=$(terraform -chdir=terraform output -raw alb_dns_name)
+          curl -sf https://$ALB/health
+
+  deploy-prod:
+    runs-on: ubuntu-latest
+    environment: prod
+    needs: deploy-dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Terraform apply (prod)
+        run: |
+          cd terraform
+          terraform init
+          terraform apply -auto-approve \
+            -var-file=environments/prod/terraform.tfvars \
+            -var="postgres_password=${{ secrets.POSTGRES_PASSWORD }}" \
+            -var="jwt_secret=${{ secrets.JWT_SECRET }}"

@@ -1,0 +1,58 @@
+{
+  "title": "Movie Search",
+  "uid": "movie-search",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request Rate",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 8, "h": 8 },
+      "targets": [{
+        "expr": "rate(http_server_duration_count[1m])",
+        "legendFormat": "req/s"
+      }]
+    },
+    {
+      "id": 2,
+      "title": "Latency p95",
+      "type": "timeseries",
+      "gridPos": { "x": 8, "y": 0, "w": 8, "h": 8 },
+      "targets": [{
+        "expr": "histogram_quantile(0.95, rate(http_server_duration_bucket[5m]))",
+        "legendFormat": "p95"
+      }]
+    },
+    {
+      "id": 3,
+      "title": "Error Rate",
+      "type": "timeseries",
+      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 8 },
+      "targets": [{
+        "expr": "rate(http_server_duration_count{http_status_code=~\"5..\"}[1m])",
+        "legendFormat": "errors/s"
+      }]
+    },
+    {
+      "id": 4,
+      "title": "MCP Tool Latency",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [{
+        "expr": "histogram_quantile(0.95, rate(http_client_duration_bucket[5m]))",
+        "legendFormat": "p95 MCP"
+      }]
+    },
+    {
+      "id": 5,
+      "title": "Active Connections",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "targets": [{
+        "expr": "http_server_active_requests",
+        "legendFormat": "active"
+      }]
+    }
+  ],
+  "schemaVersion": 38,
+  "version": 1
+}

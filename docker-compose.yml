@@ -1,0 +1,134 @@
+services:
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: movie_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-movieuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-moviedb}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-movieuser} -d ${POSTGRES_DB:-moviedb}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - movie_net
+
+  embeddings:
+    image: mindthemath/nomic-embed-v1.5:cpu
+    container_name: movie_embeddings
+    ports:
+      - "8001:8080"
+    networks:
+      - movie_net
+
+  pipeline:
+    build:
+      context: ./pipeline
+      dockerfile: Dockerfile
+    container_name: movie_pipeline
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-movieuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-moviedb}
+      POSTGRES_HOST: postgres
+      EMBEDDING_URL: http://embeddings:8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+      embeddings:
+        condition: service_started
+    networks:
+      - movie_net
+
+  mcp-server:
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+    container_name: movie_mcp
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-movieuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-moviedb}
+      POSTGRES_HOST: postgres
+      EMBEDDING_URL: http://embeddings:8080
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      embeddings:
+        condition: service_started
+    networks:
+      - movie_net
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: movie_api
+    environment:
+      MCP_SERVER_URL: http://mcp-server:8000
+      JWT_SECRET: ${JWT_SECRET}
+      OTEL_EXPORTER_JAEGER_ENDPOINT: http://jaeger:14268/api/traces
+      ASPNETCORE_URLS: http://+:8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      mcp-server:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - movie_net
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: movie_prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    networks:
+      - movie_net
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: movie_grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - movie_net
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: movie_jaeger
+    ports:
+      - "16686:16686"
+      - "14268:14268"
+    networks:
+      - movie_net
+
+volumes:
+  postgres_data:
+  grafana_data:
+
+networks:
+  movie_net:
+    driver: bridge

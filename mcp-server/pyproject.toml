@@ -1,0 +1,23 @@
+[project]
+name = "mcp-server"
+version = "1.0.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastmcp",
+    "asyncpg",
+    "httpx",
+    "pydantic>=2",
+    "python-dotenv",
+    "uvicorn",
+    "starlette",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio", "ruff", "mypy"]
+
+[tool.ruff]
+line-length = 88
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
